@@ -33,7 +33,9 @@ class MainActivity : ComponentActivity() {
                         onCellClick = viewModel::selectCell,
                         onNumberInput = viewModel::handleInput,
                         onToggleNoteMode = viewModel::toggleNoteMode,
-                        onUndo = viewModel::undo // NEU: Undo-Funktion übergeben
+                        onUndo = viewModel::undo,
+                        onNewGame = viewModel::startNewGame,
+                        onAutoFillNotes = viewModel::autoFillNotes
                     )
                 }
             }

@@ -11,18 +11,24 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
+import androidx.compose.material.icons.filled.ContentPasteSearch
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.PointerEventType
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysudoku.model.SudokuCell
+import kotlinx.coroutines.launch
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SudokuGameScreen(
     modifier: Modifier = Modifier,
@@ -30,13 +36,56 @@ fun SudokuGameScreen(
     onCellClick: (Int, Int) -> Unit,
     onNumberInput: (Int) -> Unit,
     onToggleNoteMode: () -> Unit,
-    onUndo: () -> Unit
+    onUndo: () -> Unit,
+    onNewGame: (Difficulty) -> Unit,
+    onAutoFillNotes: () -> Unit
 ) {
     val highlightValue = uiState.selectedNumber ?: uiState.selectedRow?.let { r ->
         uiState.selectedCol?.let { c ->
-            uiState.grid[r * 9 + c].value
+            val index = r * 9 + c
+            if (index in uiState.grid.indices) uiState.grid[index].value else 0
         }
     } ?: 0
+
+    val showDifficultyDialog = remember { mutableStateOf(false) }
+
+    if (uiState.isGameWon) {
+        AlertDialog(
+            onDismissRequest = { },
+            title = { Text("Glückwunsch!") },
+            text = { Text("Du hast das Sudoku in ${formatTime(uiState.timerSeconds)} gelöst!") },
+            confirmButton = {
+                Button(onClick = { 
+                    showDifficultyDialog.value = true
+                }) {
+                    Text("Neues Spiel")
+                }
+            }
+        )
+    }
+
+    if (showDifficultyDialog.value) {
+        AlertDialog(
+            onDismissRequest = { showDifficultyDialog.value = false },
+            title = { Text("Schwierigkeitsgrad wählen") },
+            text = {
+                Column {
+                    Difficulty.entries.forEach { difficulty ->
+                        TextButton(
+                            onClick = {
+                                onNewGame(difficulty)
+                                showDifficultyDialog.value = false
+                            },
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            Text(difficulty.name)
+                        }
+                    }
+                }
+            },
+            confirmButton = {}
+        )
+    }
 
     Column(
         modifier = modifier
@@ -45,6 +94,22 @@ fun SudokuGameScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = "Zeit: ${formatTime(uiState.timerSeconds)}",
+                style = MaterialTheme.typography.titleMedium
+            )
+            Text(
+                text = uiState.difficulty.name,
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.secondary
+            )
+        }
+
         SudokuGrid(
             grid = uiState.grid,
             selectedRow = uiState.selectedRow,
@@ -58,26 +123,53 @@ fun SudokuGameScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onUndo, enabled = uiState.history.isNotEmpty()) {
-                Icon(
-                    Icons.AutoMirrored.Filled.Undo, // KORREKTE VERSION
-                    contentDescription = "Rückgängig",
-                    tint = if (uiState.history.isNotEmpty()) MaterialTheme.colorScheme.primary else Color.Gray
-                )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                
+                SudokuTooltip(text = "Rückgängig") {
+                    IconButton(onClick = onUndo, enabled = uiState.history.isNotEmpty()) {
+                        Icon(
+                            Icons.AutoMirrored.Filled.Undo,
+                            contentDescription = "Rückgängig",
+                            tint = if (uiState.history.isNotEmpty()) MaterialTheme.colorScheme.primary else Color.Gray
+                        )
+                    }
+                }
+
+                SudokuTooltip(text = "Neues Spiel") {
+                    IconButton(onClick = { showDifficultyDialog.value = true }) {
+                        Icon(
+                            Icons.Default.Refresh,
+                            contentDescription = "Neues Spiel",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
+
+                SudokuTooltip(text = "Alle Hinweise automatisch füllen") {
+                    IconButton(onClick = onAutoFillNotes) {
+                        Icon(
+                            Icons.Default.ContentPasteSearch,
+                            contentDescription = "Hinweise autom. füllen",
+                            tint = MaterialTheme.colorScheme.primary
+                        )
+                    }
+                }
             }
             
-            FilterChip(
-                selected = uiState.isNoteModeEnabled,
-                onClick = onToggleNoteMode,
-                label = { Text("Notizen") },
-                leadingIcon = {
-                    Icon(
-                        Icons.Filled.Edit,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp)
-                    )
-                }
-            )
+            SudokuTooltip(text = "Notiz-Modus umschalten") {
+                FilterChip(
+                    selected = uiState.isNoteModeEnabled,
+                    onClick = onToggleNoteMode,
+                    label = { Text("Notizen") },
+                    leadingIcon = {
+                        Icon(
+                            Icons.Filled.Edit,
+                            contentDescription = null,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                )
+            }
         }
 
         NumberInputPad(
@@ -87,6 +179,43 @@ fun SudokuGameScreen(
             selectedNumber = uiState.selectedNumber
         )
     }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SudokuTooltip(text: String, content: @Composable () -> Unit) {
+    val tooltipState = rememberTooltipState(isPersistent = false)
+    val scope = rememberCoroutineScope()
+
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
+        tooltip = { PlainTooltip { Text(text) } },
+        state = tooltipState
+    ) {
+        Box(
+            modifier = Modifier.pointerInput(Unit) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent()
+                        if (event.type == PointerEventType.Enter) {
+                            scope.launch { tooltipState.show() }
+                        }
+                        if (event.type == PointerEventType.Exit) {
+                            tooltipState.dismiss()
+                        }
+                    }
+                }
+            }
+        ) {
+            content()
+        }
+    }
+}
+
+private fun formatTime(seconds: Long): String {
+    val mins = seconds / 60
+    val secs = seconds % 60
+    return "%02d:%02d".format(mins, secs)
 }
 
 @Composable
@@ -140,16 +269,16 @@ fun SudokuCellView(
     isHighlighted: Boolean,
     onClick: () -> Unit
 ) {
-    val backgroundColor = when {
-        isSelected -> Color(0xFFBBDEFB)
-        isHighlighted -> Color(0xFFE3F2FD)
-        else -> Color.White
-    }
-
     Box(
         modifier = Modifier
             .aspectRatio(1f)
-            .background(backgroundColor)
+            .background(
+                when {
+                    isSelected -> Color(0xFFBBDEFB)
+                    isHighlighted -> Color(0xFFE3F2FD)
+                    else -> Color.White
+                }
+            )
             .border(0.5.dp, Color.LightGray)
             .clickable { onClick() },
         contentAlignment = Alignment.Center
@@ -160,7 +289,7 @@ fun SudokuCellView(
                 fontSize = 22.sp,
                 fontWeight = if (cell.isFixed) FontWeight.Bold else FontWeight.Normal,
                 color = when {
-                    cell.isError -> Color.Red
+                    cell.isError || cell.isWrong -> Color.Red
                     cell.isFixed -> Color.Black
                     else -> Color(0xFF1976D2)
                 }

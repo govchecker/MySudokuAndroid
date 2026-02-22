@@ -35,7 +35,9 @@ class MainActivity : ComponentActivity() {
                         onToggleNoteMode = viewModel::toggleNoteMode,
                         onUndo = viewModel::undo,
                         onNewGame = viewModel::startNewGame,
-                        onAutoFillNotes = viewModel::autoFillNotes
+                        onAutoFillNotes = viewModel::autoFillNotes,
+                        onShowDifficultyDialog = viewModel::showNewGameDialog,
+                        onDismissDialog = viewModel::dismissNewGameDialog
                     )
                 }
             }

@@ -1,7 +1,5 @@
 package com.example.mysudoku.model
 
-import kotlin.random.Random
-
 data class SudokuPuzzle(
     val puzzle: List<Int>,
     val solution: List<Int>
@@ -9,16 +7,25 @@ data class SudokuPuzzle(
 
 class SudokuGenerator {
 
-    fun generate(emptyCells: Int = 40): SudokuPuzzle {
-        val grid = Array(9) { IntArray(9) { 0 } }
+    /**
+     * Generiert ein Sudoku-Rätsel.
+     * @param emptyCells Zielanzahl der leeren Zellen.
+     * @param maxTechnique Die höchste erlaubte Logik-Technik.
+     */
+    fun generate(
+        emptyCells: Int = 40, 
+        maxTechnique: SudokuLogicSolver.Technique = SudokuLogicSolver.Technique.HIDDEN_SINGLE
+    ): SudokuPuzzle {
+        val grid = Array(9) { IntArray(9) }
         
+        // 1. Vollständiges, gültiges Grid erstellen
         fillDiagonal(grid)
         fillRemaining(0, 3, grid)
         
         val solution = grid.flatMap { it.toList() }
         
-        // Symmetrisches Löschen für bessere Qualität
-        removeDigitsSymmetrically(grid, emptyCells)
+        // 2. Zellen entfernen, solange es logisch lösbar bleibt
+        removeDigitsSmart(grid, emptyCells, maxTechnique)
         
         val puzzle = grid.flatMap { it.toList() }
         
@@ -92,7 +99,8 @@ class SudokuGenerator {
             }
         }
 
-        for (num in 1..9) {
+        val nums = (1..9).shuffled()
+        for (num in nums) {
             if (checkIfSafe(row, col, num, grid)) {
                 grid[row][col] = num
                 if (fillRemaining(row, col + 1, grid)) return true
@@ -102,29 +110,36 @@ class SudokuGenerator {
         return false
     }
 
-    private fun removeDigitsSymmetrically(grid: Array<IntArray>, count: Int) {
-        var remaining = count
-        val attempts = 100 // Sicherheits-Limit
-        var currentAttempt = 0
+    /**
+     * Entfernt Zahlen und prüft nach jedem Schritt, ob das Rätsel noch logisch lösbar ist.
+     */
+    private fun removeDigitsSmart(
+        grid: Array<IntArray>, 
+        targetEmpty: Int, 
+        maxTechnique: SudokuLogicSolver.Technique
+    ) {
+        val cellIndices = (0 until 81).shuffled().toMutableList()
+        var removedCount = 0
         
-        while (remaining > 0 && currentAttempt < attempts) {
-            val cellId = Random.nextInt(41) // Nur bis zur Hälfte gehen
-            val r = cellId / 9
-            val c = cellId % 9
+        for (idx in cellIndices) {
+            if (removedCount >= targetEmpty) break
+            
+            val r = idx / 9
+            val c = idx % 9
             
             if (grid[r][c] != 0) {
+                val tempValue = grid[r][c]
                 grid[r][c] = 0
-                remaining--
                 
-                // Symmetrisches Gegenstück löschen
-                val oppR = 8 - r
-                val oppC = 8 - c
-                if (grid[oppR][oppC] != 0 && remaining > 0) {
-                    grid[oppR][oppC] = 0
-                    remaining--
+                // Prüfen, ob das Rätsel noch mit der erlaubten Logik lösbar ist
+                val solver = SudokuLogicSolver(grid)
+                if (solver.solve(maxTechnique)) {
+                    removedCount++
+                } else {
+                    // Nicht lösbar → Rückgängig machen
+                    grid[r][c] = tempValue
                 }
             }
-            currentAttempt++
         }
     }
 }

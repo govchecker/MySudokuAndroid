@@ -1,8 +1,11 @@
 package com.example.mysudoku.model
 
+import kotlinx.serialization.Serializable
+
 /**
  * Repräsentiert eine einzelne Zelle im Sudoku-Grid.
  */
+@Serializable
 data class SudokuCell(
     val row: Int,
     val col: Int,
@@ -15,6 +18,6 @@ data class SudokuCell(
     val boxIndex: Int get() = (row / 3) * 3 + (col / 3)
     
     // Eine Zelle gilt als falsch, wenn ein Wert eingetragen ist, 
-    // der nicht der Lösung entspricht ODER ein Duplikat-Fehler vorliegt.
+    // der nicht der Lösung entspricht, ODER ein Duplikat-Fehler vorliegt.
     val isWrong: Boolean get() = value != 0 && value != solutionValue
 }

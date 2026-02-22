@@ -1,9 +1,12 @@
 package com.example.mysudoku.ui
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import android.content.Context
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mysudoku.model.SudokuCell
 import com.example.mysudoku.model.SudokuGenerator
+import com.example.mysudoku.model.SudokuLogicSolver
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -11,11 +14,13 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import org.json.JSONArray
+import org.json.JSONObject
 
-enum class Difficulty(val emptyCells: Int) {
-    EASY(30),    // Etwas mehr als vorher (25), um nicht zu trivial zu sein
-    MEDIUM(42),  // Erhöht von 35 - erfordert mehr Aufmerksamkeit, aber meist ohne komplexe Techniken
-    HARD(54)     // Erhöht von 50 - definitiv eine Herausforderung
+enum class Difficulty(val emptyCells: Int, val maxTechnique: SudokuLogicSolver.Technique) {
+    EASY(35, SudokuLogicSolver.Technique.NAKED_SINGLE),
+    MEDIUM(45, SudokuLogicSolver.Technique.HIDDEN_SINGLE),
+    HARD(55, SudokuLogicSolver.Technique.POINTING_PAIRS)
 }
 
 data class SudokuUiState(
@@ -28,10 +33,11 @@ data class SudokuUiState(
     val history: List<List<SudokuCell>> = emptyList(),
     val isGameWon: Boolean = false,
     val difficulty: Difficulty = Difficulty.MEDIUM,
-    val timerSeconds: Long = 0
+    val timerSeconds: Long = 0,
+    val showDifficultyDialog: Boolean = false
 )
 
-class SudokuViewModel : ViewModel() {
+class SudokuViewModel(application: Application) : AndroidViewModel(application) {
 
     private val _uiState = MutableStateFlow(SudokuUiState())
     val uiState: StateFlow<SudokuUiState> = _uiState.asStateFlow()
@@ -39,45 +45,147 @@ class SudokuViewModel : ViewModel() {
 
     private val generator = SudokuGenerator()
     private var timerJob: Job? = null
+    private val prefs = application.getSharedPreferences("sudoku_prefs", Context.MODE_PRIVATE)
 
     init {
-        startNewGame(Difficulty.MEDIUM)
+        loadGameState()
+    }
+
+    private fun loadGameState() {
+        val savedDifficulty = prefs.getString("last_difficulty", Difficulty.MEDIUM.name)?.let {
+            Difficulty.valueOf(it)
+        } ?: Difficulty.MEDIUM
+
+        val savedGridJson = prefs.getString("saved_grid", null)
+        if (savedGridJson != null && !prefs.getBoolean("is_game_won", false)) {
+            try {
+                val grid = parseGrid(savedGridJson)
+                val timer = prefs.getLong("timer_seconds", 0)
+                _uiState.update { 
+                    it.copy(
+                        grid = grid,
+                        difficulty = savedDifficulty,
+                        timerSeconds = timer,
+                        numberCounts = calculateCounts(grid),
+                        showDifficultyDialog = false
+                    )
+                }
+                startTimer()
+            } catch (_: Exception) {
+                _uiState.update { it.copy(difficulty = savedDifficulty, showDifficultyDialog = true) }
+            }
+        } else {
+            _uiState.update { it.copy(difficulty = savedDifficulty, showDifficultyDialog = true) }
+        }
+    }
+
+    private fun saveGameState() {
+        val state = _uiState.value
+        if (state.grid.isEmpty()) return
+
+        val gridJson = serializeGrid(state.grid)
+        prefs.edit().apply {
+            putString("saved_grid", gridJson)
+            putString("last_difficulty", state.difficulty.name)
+            putLong("timer_seconds", state.timerSeconds)
+            putBoolean("is_game_won", state.isGameWon)
+            apply()
+        }
+    }
+
+    private fun serializeGrid(grid: List<SudokuCell>): String {
+        val array = JSONArray()
+        grid.forEach { cell ->
+            val obj = JSONObject().apply {
+                put("r", cell.row)
+                put("c", cell.col)
+                put("v", cell.value)
+                put("sv", cell.solutionValue)
+                put("if", cell.isFixed)
+                put("ie", cell.isError)
+                put("n", JSONArray(cell.notes.toList()))
+            }
+            array.put(obj)
+        }
+        return array.toString()
+    }
+
+    private fun parseGrid(json: String): List<SudokuCell> {
+        val array = JSONArray(json)
+        val list = mutableListOf<SudokuCell>()
+        for (i in 0 until array.length()) {
+            val obj = array.getJSONObject(i)
+            val notesArray = obj.getJSONArray("n")
+            val notes = mutableSetOf<Int>()
+            for (j in 0 until notesArray.length()) {
+                notes.add(notesArray.getInt(j))
+            }
+            list.add(SudokuCell(
+                row = obj.getInt("r"),
+                col = obj.getInt("c"),
+                value = obj.getInt("v"),
+                solutionValue = obj.getInt("sv"),
+                isFixed = obj.getBoolean("if"),
+                isError = obj.getBoolean("ie"),
+                notes = notes
+            ))
+        }
+        return list
+    }
+
+    fun showNewGameDialog() {
+        _uiState.update { it.copy(showDifficultyDialog = true) }
+    }
+
+    fun dismissNewGameDialog() {
+        if (_uiState.value.grid.isNotEmpty()) {
+            _uiState.update { it.copy(showDifficultyDialog = false) }
+        }
     }
 
     fun startNewGame(difficulty: Difficulty) {
         timerJob?.cancel()
-        val puzzle = generator.generate(difficulty.emptyCells)
-        val initialGrid = puzzle.puzzle.mapIndexed { index, value ->
-            SudokuCell(
-                row = index / 9, 
-                col = index % 9, 
-                value = value, 
-                solutionValue = puzzle.solution[index],
-                isFixed = value != 0
-            )
+        _uiState.update { it.copy(showDifficultyDialog = false) }
+        
+        viewModelScope.launch {
+            val puzzle = generator.generate(difficulty.emptyCells, difficulty.maxTechnique)
+            val initialGrid = puzzle.puzzle.mapIndexed { index, value ->
+                SudokuCell(
+                    row = index / 9, 
+                    col = index % 9, 
+                    value = value, 
+                    solutionValue = puzzle.solution[index],
+                    isFixed = value != 0
+                )
+            }
+            val validatedGrid = validateGrid(initialGrid)
+            _uiState.update { 
+                it.copy(
+                    grid = validatedGrid, 
+                    numberCounts = calculateCounts(validatedGrid), 
+                    history = emptyList(),
+                    isGameWon = false,
+                    difficulty = difficulty,
+                    selectedRow = null,
+                    selectedCol = null,
+                    selectedNumber = null,
+                    timerSeconds = 0
+                ) 
+            }
+            saveGameState()
+            startTimer()
         }
-        val validatedGrid = validateGrid(initialGrid)
-        _uiState.update { 
-            it.copy(
-                grid = validatedGrid, 
-                numberCounts = calculateCounts(validatedGrid), 
-                history = emptyList(),
-                isGameWon = false,
-                difficulty = difficulty,
-                selectedRow = null,
-                selectedCol = null,
-                selectedNumber = null,
-                timerSeconds = 0
-            ) 
-        }
-        startTimer()
     }
 
     private fun startTimer() {
+        timerJob?.cancel()
         timerJob = viewModelScope.launch {
             while (true) {
                 delay(1000)
                 _uiState.update { it.copy(timerSeconds = it.timerSeconds + 1) }
+                if (_uiState.value.timerSeconds % 5 == 0L) {
+                    saveGameState()
+                }
             }
         }
     }
@@ -122,6 +230,7 @@ class SudokuViewModel : ViewModel() {
                 isGameWon = checkWin(lastGrid)
             )
         }
+        saveGameState()
     }
 
     private fun applyInputToCell(row: Int, col: Int, number: Int) {
@@ -177,6 +286,7 @@ class SudokuViewModel : ViewModel() {
                 isGameWon = isWon
             )
         }
+        saveGameState()
     }
 
     private fun toggleNote(row: Int, col: Int, number: Int) {
@@ -190,6 +300,7 @@ class SudokuViewModel : ViewModel() {
             this[targetIndex] = targetCell.copy(notes = newNotes)
         }
         _uiState.update { it.copy(grid = newGrid) }
+        saveGameState()
     }
 
     fun autoFillNotes() {
@@ -211,6 +322,7 @@ class SudokuViewModel : ViewModel() {
         }
         
         _uiState.update { it.copy(grid = newGrid, history = newHistory) }
+        saveGameState()
     }
 
     private fun validateGrid(grid: List<SudokuCell>): List<SudokuCell> {
@@ -228,7 +340,7 @@ class SudokuViewModel : ViewModel() {
     }
 
     private fun checkWin(grid: List<SudokuCell>): Boolean {
-        return grid.all { it.value != 0 && it.value == it.solutionValue }
+        return grid.isNotEmpty() && grid.all { it.value != 0 && it.value == it.solutionValue }
     }
 
     private fun calculateCounts(grid: List<SudokuCell>): Map<Int, Int> {

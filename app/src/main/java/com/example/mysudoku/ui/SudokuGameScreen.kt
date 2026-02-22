@@ -1,5 +1,6 @@
 package com.example.mysudoku.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -38,7 +39,9 @@ fun SudokuGameScreen(
     onToggleNoteMode: () -> Unit,
     onUndo: () -> Unit,
     onNewGame: (Difficulty) -> Unit,
-    onAutoFillNotes: () -> Unit
+    onAutoFillNotes: () -> Unit,
+    onShowDifficultyDialog: () -> Unit,
+    onDismissDialog: () -> Unit
 ) {
     val highlightValue = uiState.selectedNumber ?: uiState.selectedRow?.let { r ->
         uiState.selectedCol?.let { c ->
@@ -47,38 +50,47 @@ fun SudokuGameScreen(
         }
     } ?: 0
 
-    val showDifficultyDialog = remember { mutableStateOf(false) }
-
     if (uiState.isGameWon) {
         AlertDialog(
             onDismissRequest = { },
             title = { Text("Glückwunsch!") },
             text = { Text("Du hast das Sudoku in ${formatTime(uiState.timerSeconds)} gelöst!") },
             confirmButton = {
-                Button(onClick = { 
-                    showDifficultyDialog.value = true
-                }) {
+                Button(onClick = onShowDifficultyDialog) {
                     Text("Neues Spiel")
                 }
             }
         )
     }
 
-    if (showDifficultyDialog.value) {
+    if (uiState.showDifficultyDialog) {
         AlertDialog(
-            onDismissRequest = { showDifficultyDialog.value = false },
+            onDismissRequest = onDismissDialog,
             title = { Text("Schwierigkeitsgrad wählen") },
             text = {
-                Column {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Difficulty.entries.forEach { difficulty ->
-                        TextButton(
-                            onClick = {
-                                onNewGame(difficulty)
-                                showDifficultyDialog.value = false
+                        val isSelected = difficulty == uiState.difficulty
+                        Button(
+                            onClick = { onNewGame(difficulty) },
+                            modifier = Modifier.fillMaxWidth(),
+                            colors = if (isSelected) {
+                                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer)
+                            } else {
+                                ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = MaterialTheme.colorScheme.onSurfaceVariant)
                             },
-                            modifier = Modifier.fillMaxWidth()
+                            border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
                         ) {
-                            Text(difficulty.name)
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(difficulty.name)
+                                if (isSelected) {
+                                    Text("✓", fontWeight = FontWeight.Bold)
+                                }
+                            }
                         }
                     }
                 }
@@ -110,13 +122,19 @@ fun SudokuGameScreen(
             )
         }
 
-        SudokuGrid(
-            grid = uiState.grid,
-            selectedRow = uiState.selectedRow,
-            selectedCol = uiState.selectedCol,
-            highlightValue = highlightValue,
-            onCellClick = onCellClick
-        )
+        if (uiState.grid.isNotEmpty()) {
+            SudokuGrid(
+                grid = uiState.grid,
+                selectedRow = uiState.selectedRow,
+                selectedCol = uiState.selectedCol,
+                highlightValue = highlightValue,
+                onCellClick = onCellClick
+            )
+        } else {
+            Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+        }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -136,7 +154,7 @@ fun SudokuGameScreen(
                 }
 
                 SudokuTooltip(text = "Neues Spiel") {
-                    IconButton(onClick = { showDifficultyDialog.value = true }) {
+                    IconButton(onClick = onShowDifficultyDialog) {
                         Icon(
                             Icons.Default.Refresh,
                             contentDescription = "Neues Spiel",

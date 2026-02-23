@@ -206,7 +206,11 @@ fun SudokuGameScreen(
 fun SudokuTooltip(text: String, content: @Composable () -> Unit) {
     val tooltipState = rememberTooltipState(isPersistent = false)
     val scope = rememberCoroutineScope()
-    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(), tooltip = { PlainTooltip { Text(text) } }, state = tooltipState) {
+    TooltipBox(
+        positionProvider = TooltipDefaults.rememberTooltipPositionProvider(positioning = TooltipAnchorPosition.Above),
+        tooltip = { PlainTooltip { Text(text) } },
+        state = tooltipState
+    ) {
         Box(modifier = Modifier.pointerInput(Unit) {
             awaitPointerEventScope {
                 while (true) {
@@ -367,7 +371,7 @@ fun NumberInputPad(
                 ElevatedButton(
                     onClick = { onNumberClick(i) },
                     modifier = Modifier.aspectRatio(1f),
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(16.dp),
                     colors = ButtonDefaults.elevatedButtonColors(
                         containerColor = when {
                             isSelected && !isNoteMode -> MaterialTheme.colorScheme.primary

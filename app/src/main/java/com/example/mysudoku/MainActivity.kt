@@ -39,7 +39,7 @@ class MainActivity : ComponentActivity() {
                                     style = MaterialTheme.typography.headlineMedium
                                 )
                             },
-                            colors = TopAppBarDefaults.centerAlignedTopAppBarColors(
+                            colors = TopAppBarDefaults.topAppBarColors(
                                 containerColor = MaterialTheme.colorScheme.surface
                             )
                         )

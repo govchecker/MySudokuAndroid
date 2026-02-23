@@ -1,6 +1,6 @@
 # My Sudoku App 🧩
 
-Eine moderne Sudoku-App für Android, entwickelt mit **Jetpack Compose** und nach der **MVVM-Architektur**. Das Design und die Funktionalität sind an das klassische Microsoft Sudoku angelehnt, ergänzt um einen intelligenten Logik-Generator.
+Eine moderne Sudoku-App für Android entwickelt mit **Jetpack Compose** und nach der **MVVM-Architektur**. Das Design und die Funktionalität sind an das klassische Microsoft Sudoku angelehnt, ergänzt um einen intelligenten Logik-Generator.
 
 ## 🚀 Features
 

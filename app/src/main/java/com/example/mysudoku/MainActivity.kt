@@ -57,7 +57,8 @@ class MainActivity : ComponentActivity() {
                         onShowDifficultyDialog = viewModel::showNewGameDialog,
                         onDismissDialog = viewModel::dismissNewGameDialog,
                         onRequestHint = viewModel::requestHint,
-                        onClearHint = viewModel::clearHint
+                        onClearHint = viewModel::clearHint,
+                        onAnimationFinished = viewModel::onAnimationFinished
                     )
                 }
             }

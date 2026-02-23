@@ -1,5 +1,10 @@
 package com.example.mysudoku.ui
 
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.repeatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
@@ -29,6 +34,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysudoku.model.SudokuCell
 import com.example.mysudoku.model.SudokuHint
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -45,7 +51,8 @@ fun SudokuGameScreen(
     onShowDifficultyDialog: () -> Unit,
     onDismissDialog: () -> Unit,
     onRequestHint: () -> Unit,
-    onClearHint: () -> Unit
+    onClearHint: () -> Unit,
+    onAnimationFinished: () -> Unit
 ) {
     val highlightValue = uiState.selectedNumber ?: uiState.selectedRow?.let { r ->
         uiState.selectedCol?.let { c ->
@@ -53,6 +60,14 @@ fun SudokuGameScreen(
             if (index in uiState.grid.indices) uiState.grid[index].value else 0
         }
     } ?: 0
+
+    // Timer für die Block-Animationen (2x Blinken dauert ca. 1 Sekunde)
+    LaunchedEffect(uiState.animationEvent) {
+        if (uiState.animationEvent != null) {
+            delay(1100)
+            onAnimationFinished()
+        }
+    }
 
     if (uiState.isGameWon) {
         AlertDialog(
@@ -148,6 +163,7 @@ fun SudokuGameScreen(
                 selectedCol = uiState.selectedCol,
                 highlightValue = highlightValue,
                 hint = uiState.currentHint,
+                animationEvent = uiState.animationEvent,
                 onCellClick = onCellClick
             )
         } else {
@@ -236,6 +252,7 @@ fun SudokuGrid(
     selectedCol: Int?,
     highlightValue: Int,
     hint: SudokuHint?,
+    animationEvent: AnimationEvent?,
     onCellClick: (Int, Int) -> Unit
 ) {
     Card(
@@ -251,12 +268,19 @@ fun SudokuGrid(
                     val isSelected = cell.row == selectedRow && cell.col == selectedCol
                     val isHighlighted = highlightValue != 0 && cell.value == highlightValue
                     val isHinted = hint?.affectedCells?.contains(cell.row to cell.col) == true
+                    
+                    val isAnimating = animationEvent?.let { event ->
+                        event.rows.contains(cell.row) || 
+                        event.cols.contains(cell.col) || 
+                        event.boxes.contains(cell.boxIndex)
+                    } ?: false
 
                     SudokuCellView(
                         cell = cell,
                         isSelected = isSelected,
                         isHighlighted = isHighlighted,
                         isHinted = isHinted,
+                        isAnimating = isAnimating,
                         onClick = { onCellClick(cell.row, cell.col) }
                     )
                 }
@@ -282,13 +306,29 @@ fun SudokuCellView(
     isSelected: Boolean,
     isHighlighted: Boolean,
     isHinted: Boolean,
+    isAnimating: Boolean,
     onClick: () -> Unit
 ) {
+    val animColor by animateColorAsState(
+        targetValue = if (isAnimating) Color(0xFFFFD700).copy(alpha = 0.6f) else Color.Transparent,
+        animationSpec = if (isAnimating) {
+            repeatable(
+                iterations = 4,
+                animation = tween(durationMillis = 250, easing = LinearOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            )
+        } else {
+            tween(durationMillis = 200)
+        },
+        label = "cellAnimation"
+    )
+
     Box(
         modifier = Modifier
             .aspectRatio(1f)
             .background(
                 when {
+                    isAnimating -> animColor
                     isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
                     isHinted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
                     isHighlighted -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)

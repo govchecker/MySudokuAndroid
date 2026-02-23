@@ -1,3 +1,5 @@
+@file:Suppress("SpellCheckingInspection")
+
 package com.example.mysudoku.model
 
 class SudokuLogicSolver(private val initialGrid: Array<IntArray>) {

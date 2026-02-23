@@ -25,6 +25,13 @@ enum class Difficulty(val emptyCells: Int, val maxTechnique: SudokuLogicSolver.T
     EXPERT(60, SudokuLogicSolver.Technique.NAKED_PAIR)
 }
 
+data class AnimationEvent(
+    val rows: List<Int> = emptyList(),
+    val cols: List<Int> = emptyList(),
+    val boxes: List<Int> = emptyList(),
+    val timestamp: Long = System.currentTimeMillis()
+)
+
 data class SudokuUiState(
     val grid: List<SudokuCell> = emptyList(),
     val selectedRow: Int? = null,
@@ -37,7 +44,8 @@ data class SudokuUiState(
     val difficulty: Difficulty = Difficulty.MEDIUM,
     val timerSeconds: Long = 0,
     val showDifficultyDialog: Boolean = false,
-    val currentHint: SudokuHint? = null
+    val currentHint: SudokuHint? = null,
+    val animationEvent: AnimationEvent? = null
 )
 
 class SudokuViewModel(application: Application) : AndroidViewModel(application) {
@@ -148,7 +156,7 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startNewGame(difficulty: Difficulty) {
         timerJob?.cancel()
-        _uiState.update { it.copy(showDifficultyDialog = false, currentHint = null) }
+        _uiState.update { it.copy(showDifficultyDialog = false, currentHint = null, animationEvent = null) }
         
         viewModelScope.launch {
             val puzzle = generator.generate(difficulty.emptyCells, difficulty.maxTechnique)
@@ -173,7 +181,8 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
                     selectedCol = null,
                     selectedNumber = null,
                     timerSeconds = 0,
-                    currentHint = null
+                    currentHint = null,
+                    animationEvent = null
                 ) 
             }
             saveGameState()
@@ -222,6 +231,10 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
     
+    fun onAnimationFinished() {
+        _uiState.update { it.copy(animationEvent = null) }
+    }
+
     fun undo() {
         if (!canUndo || _uiState.value.isGameWon) return
         val lastGrid = _uiState.value.history.last()
@@ -232,7 +245,8 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
                 history = newHistory,
                 numberCounts = calculateCounts(lastGrid),
                 isGameWon = checkWin(lastGrid),
-                currentHint = null
+                currentHint = null,
+                animationEvent = null
             )
         }
         saveGameState()
@@ -258,11 +272,31 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         val targetIndex = row * 9 + col
         val targetCell = currentState.grid[targetIndex]
         
+        if (targetCell.value == number) {
+            val newGrid = currentState.grid.mapIndexed { index, cell ->
+                if (index == targetIndex) cell.copy(value = 0, notes = emptySet()) else cell
+            }
+            val validatedGrid = validateGrid(newGrid)
+            _uiState.update {
+                it.copy(
+                    grid = validatedGrid,
+                    numberCounts = calculateCounts(validatedGrid),
+                    isGameWon = false
+                )
+            }
+            saveGameState()
+            return
+        }
+
+        val oldCompletedRows = (0..8).filter { r -> isAreaComplete(currentState.grid, "row", r) }.toSet()
+        val oldCompletedCols = (0..8).filter { c -> isAreaComplete(currentState.grid, "col", c) }.toSet()
+        val oldCompletedBoxes = (0..8).filter { b -> isAreaComplete(currentState.grid, "box", b) }.toSet()
+
         val isCorrectEntry = number == targetCell.solutionValue
 
         var newGrid = currentState.grid.mapIndexed { index, cell ->
             if (index == targetIndex) {
-                cell.copy(value = if (cell.value == number) 0 else number, notes = emptySet())
+                cell.copy(value = number, notes = emptySet())
             } else {
                 cell
             }
@@ -280,18 +314,42 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         }
 
         val validatedGrid = validateGrid(newGrid)
-        val isWon = checkWin(validatedGrid)
         
+        val newCompletedRows = (0..8).filter { r -> isAreaComplete(validatedGrid, "row", r) }.toSet()
+        val newCompletedCols = (0..8).filter { c -> isAreaComplete(validatedGrid, "col", c) }.toSet()
+        val newCompletedBoxes = (0..8).filter { b -> isAreaComplete(validatedGrid, "box", b) }.toSet()
+
+        val newlyCompletedRows = (newCompletedRows - oldCompletedRows).toList()
+        val newlyCompletedCols = (newCompletedCols - oldCompletedCols).toList()
+        val newlyCompletedBoxes = (newCompletedBoxes - oldCompletedBoxes).toList()
+
+        val animEvent = if (newlyCompletedRows.isNotEmpty() || newlyCompletedCols.isNotEmpty() || newlyCompletedBoxes.isNotEmpty()) {
+            AnimationEvent(newlyCompletedRows, newlyCompletedCols, newlyCompletedBoxes)
+        } else null
+
+        val isWon = checkWin(validatedGrid)
         if (isWon) timerJob?.cancel()
 
         _uiState.update {
             it.copy(
                 grid = validatedGrid,
                 numberCounts = calculateCounts(validatedGrid),
-                isGameWon = isWon
+                isGameWon = isWon,
+                animationEvent = animEvent
             )
         }
         saveGameState()
+    }
+
+    private fun isAreaComplete(grid: List<SudokuCell>, type: String, index: Int): Boolean {
+        if (grid.isEmpty()) return false
+        val areaCells = when (type) {
+            "row" -> grid.filter { it.row == index }
+            "col" -> grid.filter { it.col == index }
+            "box" -> grid.filter { it.boxIndex == index }
+            else -> emptyList()
+        }
+        return areaCells.size == 9 && areaCells.all { it.value != 0 && !it.isError && !it.isWrong }
     }
 
     private fun toggleNote(row: Int, col: Int, number: Int) {

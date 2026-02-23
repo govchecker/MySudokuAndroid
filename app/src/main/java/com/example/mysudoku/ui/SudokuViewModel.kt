@@ -6,6 +6,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.mysudoku.model.SudokuCell
 import com.example.mysudoku.model.SudokuGenerator
+import com.example.mysudoku.model.SudokuHint
 import com.example.mysudoku.model.SudokuLogicSolver
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -20,7 +21,8 @@ import org.json.JSONObject
 enum class Difficulty(val emptyCells: Int, val maxTechnique: SudokuLogicSolver.Technique) {
     EASY(35, SudokuLogicSolver.Technique.NAKED_SINGLE),
     MEDIUM(45, SudokuLogicSolver.Technique.HIDDEN_SINGLE),
-    HARD(55, SudokuLogicSolver.Technique.POINTING_PAIRS)
+    HARD(55, SudokuLogicSolver.Technique.POINTING_PAIRS),
+    EXPERT(60, SudokuLogicSolver.Technique.NAKED_PAIR)
 }
 
 data class SudokuUiState(
@@ -34,7 +36,8 @@ data class SudokuUiState(
     val isGameWon: Boolean = false,
     val difficulty: Difficulty = Difficulty.MEDIUM,
     val timerSeconds: Long = 0,
-    val showDifficultyDialog: Boolean = false
+    val showDifficultyDialog: Boolean = false,
+    val currentHint: SudokuHint? = null
 )
 
 class SudokuViewModel(application: Application) : AndroidViewModel(application) {
@@ -145,7 +148,7 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
 
     fun startNewGame(difficulty: Difficulty) {
         timerJob?.cancel()
-        _uiState.update { it.copy(showDifficultyDialog = false) }
+        _uiState.update { it.copy(showDifficultyDialog = false, currentHint = null) }
         
         viewModelScope.launch {
             val puzzle = generator.generate(difficulty.emptyCells, difficulty.maxTechnique)
@@ -169,7 +172,8 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
                     selectedRow = null,
                     selectedCol = null,
                     selectedNumber = null,
-                    timerSeconds = 0
+                    timerSeconds = 0,
+                    currentHint = null
                 ) 
             }
             saveGameState()
@@ -198,7 +202,7 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         if (activeNumber != null) {
             applyInputToCell(row, col, activeNumber)
         } else {
-            _uiState.update { it.copy(selectedRow = row, selectedCol = col, selectedNumber = null) }
+            _uiState.update { it.copy(selectedRow = row, selectedCol = col, selectedNumber = null, currentHint = null) }
         }
     }
 
@@ -214,7 +218,7 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
             applyInputToCell(currentState.selectedRow, currentState.selectedCol, number)
             _uiState.update { it.copy(selectedRow = null, selectedCol = null, selectedNumber = null) }
         } else {
-            _uiState.update { it.copy(selectedNumber = if (currentState.selectedNumber == number) null else number) }
+            _uiState.update { it.copy(selectedNumber = if (currentState.selectedNumber == number) null else number, currentHint = null) }
         }
     }
     
@@ -227,7 +231,8 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
                 grid = lastGrid,
                 history = newHistory,
                 numberCounts = calculateCounts(lastGrid),
-                isGameWon = checkWin(lastGrid)
+                isGameWon = checkWin(lastGrid),
+                currentHint = null
             )
         }
         saveGameState()
@@ -239,7 +244,7 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         if (currentGrid[targetIndex].isFixed) return
 
         val newHistory = _uiState.value.history + listOf(currentGrid)
-        _uiState.update { it.copy(history = newHistory) }
+        _uiState.update { it.copy(history = newHistory, currentHint = null) }
 
         if (_uiState.value.isNoteModeEnabled) {
             toggleNote(row, col, number)
@@ -323,6 +328,21 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         
         _uiState.update { it.copy(grid = newGrid, history = newHistory) }
         saveGameState()
+    }
+
+    fun requestHint() {
+        val gridArray = Array(9) { r ->
+            IntArray(9) { c ->
+                _uiState.value.grid[r * 9 + c].value
+            }
+        }
+        val solver = SudokuLogicSolver(gridArray)
+        val hint = solver.findNextHint()
+        _uiState.update { it.copy(currentHint = hint) }
+    }
+
+    fun clearHint() {
+        _uiState.update { it.copy(currentHint = null) }
     }
 
     private fun validateGrid(grid: List<SudokuCell>): List<SudokuCell> {

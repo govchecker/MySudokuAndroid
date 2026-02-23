@@ -14,6 +14,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Undo
 import androidx.compose.material.icons.filled.ContentPasteSearch
 import androidx.compose.material.icons.filled.Edit
+import androidx.compose.material.icons.filled.Lightbulb
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -27,6 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.mysudoku.model.SudokuCell
+import com.example.mysudoku.model.SudokuHint
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -41,7 +43,9 @@ fun SudokuGameScreen(
     onNewGame: (Difficulty) -> Unit,
     onAutoFillNotes: () -> Unit,
     onShowDifficultyDialog: () -> Unit,
-    onDismissDialog: () -> Unit
+    onDismissDialog: () -> Unit,
+    onRequestHint: () -> Unit,
+    onClearHint: () -> Unit
 ) {
     val highlightValue = uiState.selectedNumber ?: uiState.selectedRow?.let { r ->
         uiState.selectedCol?.let { c ->
@@ -58,6 +62,19 @@ fun SudokuGameScreen(
             confirmButton = {
                 Button(onClick = onShowDifficultyDialog) {
                     Text("Neues Spiel")
+                }
+            }
+        )
+    }
+
+    if (uiState.currentHint != null) {
+        AlertDialog(
+            onDismissRequest = onClearHint,
+            title = { Text("Hinweis") },
+            text = { Text(uiState.currentHint.message) },
+            confirmButton = {
+                TextButton(onClick = onClearHint) {
+                    Text("Verstanden")
                 }
             }
         )
@@ -102,6 +119,7 @@ fun SudokuGameScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface)
             .padding(16.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp)
@@ -113,7 +131,8 @@ fun SudokuGameScreen(
         ) {
             Text(
                 text = "Zeit: ${formatTime(uiState.timerSeconds)}",
-                style = MaterialTheme.typography.titleMedium
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.onSurface
             )
             Text(
                 text = uiState.difficulty.name,
@@ -128,6 +147,7 @@ fun SudokuGameScreen(
                 selectedRow = uiState.selectedRow,
                 selectedCol = uiState.selectedCol,
                 highlightValue = highlightValue,
+                hint = uiState.currentHint,
                 onCellClick = onCellClick
             )
         } else {
@@ -141,53 +161,35 @@ fun SudokuGameScreen(
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 SudokuTooltip(text = "Rückgängig") {
                     IconButton(onClick = onUndo, enabled = uiState.history.isNotEmpty()) {
-                        Icon(
-                            Icons.AutoMirrored.Filled.Undo,
-                            contentDescription = "Rückgängig",
-                            tint = if (uiState.history.isNotEmpty()) MaterialTheme.colorScheme.primary else Color.Gray
-                        )
+                        Icon(Icons.AutoMirrored.Filled.Undo, "Rückgängig", tint = if (uiState.history.isNotEmpty()) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.5f))
                     }
                 }
-
+                SudokuTooltip(text = "Tipp erhalten") {
+                    IconButton(onClick = onRequestHint) {
+                        Icon(Icons.Default.Lightbulb, "Hinweis", tint = MaterialTheme.colorScheme.primary)
+                    }
+                }
                 SudokuTooltip(text = "Neues Spiel") {
                     IconButton(onClick = onShowDifficultyDialog) {
-                        Icon(
-                            Icons.Default.Refresh,
-                            contentDescription = "Neues Spiel",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Icon(Icons.Default.Refresh, "Neues Spiel", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
-
                 SudokuTooltip(text = "Alle Hinweise automatisch füllen") {
                     IconButton(onClick = onAutoFillNotes) {
-                        Icon(
-                            Icons.Default.ContentPasteSearch,
-                            contentDescription = "Hinweise autom. füllen",
-                            tint = MaterialTheme.colorScheme.primary
-                        )
+                        Icon(Icons.Default.ContentPasteSearch, "Hinweise autom. füllen", tint = MaterialTheme.colorScheme.primary)
                     }
                 }
             }
             
-            SudokuTooltip(text = "Notiz-Modus umschalten") {
-                FilterChip(
-                    selected = uiState.isNoteModeEnabled,
-                    onClick = onToggleNoteMode,
-                    label = { Text("Notizen") },
-                    leadingIcon = {
-                        Icon(
-                            Icons.Filled.Edit,
-                            contentDescription = null,
-                            modifier = Modifier.size(18.dp)
-                        )
-                    }
-                )
-            }
+            FilterChip(
+                selected = uiState.isNoteModeEnabled,
+                onClick = onToggleNoteMode,
+                label = { Text("Notizen") },
+                leadingIcon = { Icon(Icons.Filled.Edit, null, modifier = Modifier.size(18.dp)) }
+            )
         }
 
         NumberInputPad(
@@ -204,29 +206,16 @@ fun SudokuGameScreen(
 fun SudokuTooltip(text: String, content: @Composable () -> Unit) {
     val tooltipState = rememberTooltipState(isPersistent = false)
     val scope = rememberCoroutineScope()
-
-    TooltipBox(
-        positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(),
-        tooltip = { PlainTooltip { Text(text) } },
-        state = tooltipState
-    ) {
-        Box(
-            modifier = Modifier.pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        if (event.type == PointerEventType.Enter) {
-                            scope.launch { tooltipState.show() }
-                        }
-                        if (event.type == PointerEventType.Exit) {
-                            tooltipState.dismiss()
-                        }
-                    }
+    TooltipBox(positionProvider = TooltipDefaults.rememberPlainTooltipPositionProvider(), tooltip = { PlainTooltip { Text(text) } }, state = tooltipState) {
+        Box(modifier = Modifier.pointerInput(Unit) {
+            awaitPointerEventScope {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    if (event.type == PointerEventType.Enter) { scope.launch { tooltipState.show() } }
+                    if (event.type == PointerEventType.Exit) { tooltipState.dismiss() }
                 }
             }
-        ) {
-            content()
-        }
+        }) { content() }
     }
 }
 
@@ -242,39 +231,42 @@ fun SudokuGrid(
     selectedRow: Int?,
     selectedCol: Int?,
     highlightValue: Int,
+    hint: SudokuHint?,
     onCellClick: (Int, Int) -> Unit
 ) {
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(1f)
-            .border(2.dp, Color.Black)
+    Card(
+        modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+        shape = RoundedCornerShape(4.dp),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(9),
-            modifier = Modifier.fillMaxSize(),
-            userScrollEnabled = false
+        Box(
+            modifier = Modifier.fillMaxSize().border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.5f), RoundedCornerShape(4.dp))
         ) {
-            items(grid) { cell ->
-                val isSelected = cell.row == selectedRow && cell.col == selectedCol
-                val isHighlighted = highlightValue != 0 && cell.value == highlightValue
+            LazyVerticalGrid(columns = GridCells.Fixed(9), modifier = Modifier.fillMaxSize(), userScrollEnabled = false) {
+                items(grid) { cell ->
+                    val isSelected = cell.row == selectedRow && cell.col == selectedCol
+                    val isHighlighted = highlightValue != 0 && cell.value == highlightValue
+                    val isHinted = hint?.affectedCells?.contains(cell.row to cell.col) == true
 
-                SudokuCellView(
-                    cell = cell,
-                    isSelected = isSelected,
-                    isHighlighted = isHighlighted,
-                    onClick = { onCellClick(cell.row, cell.col) }
-                )
+                    SudokuCellView(
+                        cell = cell,
+                        isSelected = isSelected,
+                        isHighlighted = isHighlighted,
+                        isHinted = isHinted,
+                        onClick = { onCellClick(cell.row, cell.col) }
+                    )
+                }
             }
-        }
 
-        Canvas(modifier = Modifier.fillMaxSize()) {
-            val strokeWidth = 3.dp.toPx()
-            for (i in 1 until 3) {
-                val x = i * (size.width / 3f)
-                drawLine(Color.Black, Offset(x, 0f), Offset(x, size.height), strokeWidth)
-                val y = i * (size.height / 3f)
-                drawLine(Color.Black, Offset(0f, y), Offset(size.width, y), strokeWidth)
+            Canvas(modifier = Modifier.fillMaxSize()) {
+                val thickStrokeWidth = 4.dp.toPx()
+                val color = Color.Black.copy(alpha = 0.7f)
+                for (i in 1 until 3) {
+                    val x = i * (size.width / 3f)
+                    drawLine(color, Offset(x, 0f), Offset(x, size.height), thickStrokeWidth)
+                    val y = i * (size.height / 3f)
+                    drawLine(color, Offset(0f, y), Offset(size.width, y), thickStrokeWidth)
+                }
             }
         }
     }
@@ -285,6 +277,7 @@ fun SudokuCellView(
     cell: SudokuCell,
     isSelected: Boolean,
     isHighlighted: Boolean,
+    isHinted: Boolean,
     onClick: () -> Unit
 ) {
     Box(
@@ -292,12 +285,13 @@ fun SudokuCellView(
             .aspectRatio(1f)
             .background(
                 when {
-                    isSelected -> Color(0xFFBBDEFB)
-                    isHighlighted -> Color(0xFFE3F2FD)
-                    else -> Color.White
+                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    isHinted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
+                    isHighlighted -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                    else -> Color.Transparent
                 }
             )
-            .border(0.5.dp, Color.LightGray)
+            .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
@@ -307,9 +301,9 @@ fun SudokuCellView(
                 fontSize = 22.sp,
                 fontWeight = if (cell.isFixed) FontWeight.Bold else FontWeight.Normal,
                 color = when {
-                    cell.isError || cell.isWrong -> Color.Red
-                    cell.isFixed -> Color.Black
-                    else -> Color(0xFF1976D2)
+                    cell.isError || cell.isWrong -> MaterialTheme.colorScheme.error
+                    cell.isFixed -> MaterialTheme.colorScheme.onSurface
+                    else -> MaterialTheme.colorScheme.primary
                 }
             )
         } else if (cell.notes.isNotEmpty()) {
@@ -320,7 +314,7 @@ fun SudokuCellView(
 
 @Composable
 fun NoteGrid(notes: Set<Int>) {
-    Column(modifier = Modifier.fillMaxSize().padding(1.dp)) {
+    Column(modifier = Modifier.fillMaxSize().padding(4.dp)) {
         for (row in 0 until 3) {
             Row(modifier = Modifier.weight(1f)) {
                 for (col in 0 until 3) {
@@ -329,9 +323,9 @@ fun NoteGrid(notes: Set<Int>) {
                         if (notes.contains(num)) {
                             Text(
                                 text = num.toString(),
-                                fontSize = 11.sp,
-                                color = Color.DarkGray,
-                                lineHeight = 11.sp
+                                fontSize = 9.sp,
+                                color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+                                lineHeight = 9.sp
                             )
                         }
                     }
@@ -355,8 +349,7 @@ fun NumberInputPad(
     ) {
         for (i in 1..9) {
             val count = counts[i] ?: 0
-            val remaining = 9 - count
-            val isDone = remaining <= 0
+            val isDone = count >= 9
             val isSelected = selectedNumber == i
 
             Column(
@@ -365,26 +358,35 @@ fun NumberInputPad(
                 verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Text(
-                    text = if (isDone) "✓" else remaining.toString(),
+                    text = if (isDone) "✓" else (9 - count).toString(),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Bold,
-                    color = if (isDone) Color(0xFF4CAF50) else Color.Gray
+                    color = if (isDone) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f)
                 )
 
-                Button(
+                ElevatedButton(
                     onClick = { onNumberClick(i) },
                     modifier = Modifier.aspectRatio(1f),
                     shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSelected) Color(0xFFFF9800) 
-                                        else if (isNoteMode) Color(0xFFFFB74D) 
-                                        else if (isDone) Color.LightGray 
-                                        else MaterialTheme.colorScheme.primary
+                    colors = ButtonDefaults.elevatedButtonColors(
+                        containerColor = when {
+                            isSelected && !isNoteMode -> MaterialTheme.colorScheme.primary
+                            isSelected && isNoteMode -> MaterialTheme.colorScheme.secondary
+                            isNoteMode -> MaterialTheme.colorScheme.primaryContainer
+                            else -> MaterialTheme.colorScheme.surface
+                        },
+                        contentColor = when {
+                            isSelected && !isNoteMode -> MaterialTheme.colorScheme.onPrimary
+                            isSelected && isNoteMode -> MaterialTheme.colorScheme.onSecondary
+                            isNoteMode -> MaterialTheme.colorScheme.onPrimaryContainer
+                            else -> MaterialTheme.colorScheme.onSurface
+                        }
                     ),
                     contentPadding = PaddingValues(0.dp),
-                    enabled = !isDone || isNoteMode
+                    enabled = !isDone || isNoteMode,
+                    elevation = ButtonDefaults.elevatedButtonElevation(defaultElevation = if (isSelected) 8.dp else 2.dp)
                 ) {
-                    Text(text = i.toString(), fontSize = 18.sp, color = Color.White)
+                    Text(text = i.toString(), fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }

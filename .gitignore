@@ -1,20 +1,41 @@
+# Build-Artefakte
 *.iml
 .gradle
 /local.properties
-.DS_Store
-Thumbs.db
-*.hprof
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/caches
+/.idea/deploymentTargetDropDown.xml
+/build
 
-# IntelliJ/Android Studio
+# Modul-spezifische Build-Ordner
+/*/build
+
+# Android Studio / IntelliJ spezifisch
 .idea/
 !.idea/codeStyles/
 !.idea/copyright/
 
-# Kotlin
+# Kotlin-spezifisch
 .kotlin/
 
-# Build-Outputs
-/build
+# Log-Dateien und Captures
 /captures
+*.log
+*.hprof
+
+# Native Build-Ordner
 .externalNativeBuild
 .cxx
+
+# Betriebssystem-spezifische Dateien
+.DS_Store
+Thumbs.db
+
+# Signing-Dateien (sollten nie im Git landen)
+*.jks
+*.keystore
+!debug.keystore

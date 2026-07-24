@@ -187,7 +187,52 @@ class SudokuLogicSolver(private val initialGrid: Array<IntArray>) {
                 }
             }
         }
-        // Similar logic for Columns and Boxes...
+        // Columns
+        for (c in 0 until 9) {
+            val pairs = (0 until 9).filter { r -> candidates[r][c].size == 2 }
+            if (pairs.size >= 2) {
+                for (i in pairs.indices) {
+                    for (j in i + 1 until pairs.size) {
+                        val r1 = pairs[i]
+                        val r2 = pairs[j]
+                        if (candidates[r1][c] == candidates[r2][c]) {
+                            val vals = candidates[r1][c]
+                            val affected = (0 until 9).filter { r -> r != r1 && r != r2 && (candidates[r][c].intersect(vals).isNotEmpty()) }
+                            if (affected.isNotEmpty()) {
+                                return SudokuHint(null, null, null, Technique.NAKED_PAIR, "Naked Pair: Diese zwei Zellen in der Spalte enthalten nur die Kandidaten ${vals.joinToString("/")}. Diese können aus dem Rest der Spalte entfernt werden.", listOf(r1 to c, r2 to c))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // Boxes
+        for (b in 0 until 9) {
+            val startR = (b / 3) * 3
+            val startC = (b % 3) * 3
+            val boxCells = mutableListOf<Pair<Int, Int>>()
+            for (i in 0 until 3) {
+                for (j in 0 until 3) {
+                    boxCells.add(startR + i to startC + j)
+                }
+            }
+            val pairs = boxCells.filter { (r, c) -> candidates[r][c].size == 2 }
+            if (pairs.size >= 2) {
+                for (i in pairs.indices) {
+                    for (j in i + 1 until pairs.size) {
+                        val (r1, c1) = pairs[i]
+                        val (r2, c2) = pairs[j]
+                        if (candidates[r1][c1] == candidates[r2][c2]) {
+                            val vals = candidates[r1][c1]
+                            val affected = boxCells.filter { (r, c) -> (r != r1 || c != c1) && (r != r2 || c != c2) && (candidates[r][c].intersect(vals).isNotEmpty()) }
+                            if (affected.isNotEmpty()) {
+                                return SudokuHint(null, null, null, Technique.NAKED_PAIR, "Naked Pair: Diese zwei Zellen im Block enthalten nur die Kandidaten ${vals.joinToString("/")}. Diese können aus dem Rest des Blocks entfernt werden.", listOf(r1 to c1, r2 to c2))
+                            }
+                        }
+                    }
+                }
+            }
+        }
         return null
     }
 
@@ -209,7 +254,22 @@ class SudokuLogicSolver(private val initialGrid: Array<IntArray>) {
                     }
                 }
             }
-             // Similar logic for Columns...
+            // Columns X-Wing
+            val colPositions = Array(9) { c -> (0 until 9).filter { r -> candidates[r][c].contains(v) } }
+            for (c1 in 0 until 9) {
+                if (colPositions[c1].size == 2) {
+                    for (c2 in c1 + 1 until 9) {
+                        if (colPositions[c2] == colPositions[c1]) {
+                            val r1 = colPositions[c1][0]
+                            val r2 = colPositions[c1][1]
+                            val affected = (0 until 9).filter { c -> c != c1 && c != c2 && (candidates[r1][c].contains(v) || candidates[r2][c].contains(v)) }
+                            if (affected.isNotEmpty()) {
+                                return SudokuHint(null, null, v, Technique.X_WING, "X-Wing: Die $v ist in den Spalten $c1/$c2 auf die Reihen $r1/$r2 beschränkt. Sie kann aus dem Rest dieser Reihen entfernt werden.", listOf(r1 to c1, r1 to c2, r2 to c1, r2 to c2))
+                            }
+                        }
+                    }
+                }
+            }
         }
         return null
     }

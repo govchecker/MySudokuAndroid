@@ -292,8 +292,6 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
         val oldCompletedCols = (0..8).filter { c -> isAreaComplete(currentState.grid, "col", c) }.toSet()
         val oldCompletedBoxes = (0..8).filter { b -> isAreaComplete(currentState.grid, "box", b) }.toSet()
 
-        val isCorrectEntry = number == targetCell.solutionValue
-
         var newGrid = currentState.grid.mapIndexed { index, cell ->
             if (index == targetIndex) {
                 cell.copy(value = number, notes = emptySet())
@@ -302,7 +300,8 @@ class SudokuViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
 
-        if (isCorrectEntry && number != 0) {
+        // Smart Notes: Clear notes for the entered number in same row, column, and box
+        if (number != 0) {
             val targetBoxIndex = (row / 3) * 3 + (col / 3)
             newGrid = newGrid.map { cell ->
                 if (cell.row == row || cell.col == col || cell.boxIndex == targetBoxIndex) {

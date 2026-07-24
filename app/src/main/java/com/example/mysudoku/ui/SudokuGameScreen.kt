@@ -27,8 +27,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.PointerEventType
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -220,22 +218,12 @@ fun SudokuGameScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SudokuTooltip(text: String, content: @Composable () -> Unit) {
-    val tooltipState = rememberTooltipState(isPersistent = false)
-    val scope = rememberCoroutineScope()
     TooltipBox(
         positionProvider = TooltipDefaults.rememberTooltipPositionProvider(positioning = TooltipAnchorPosition.Above),
         tooltip = { PlainTooltip { Text(text) } },
-        state = tooltipState
+        state = rememberTooltipState(isPersistent = false)
     ) {
-        Box(modifier = Modifier.pointerInput(Unit) {
-            awaitPointerEventScope {
-                while (true) {
-                    val event = awaitPointerEvent()
-                    if (event.type == PointerEventType.Enter) { scope.launch { tooltipState.show() } }
-                    if (event.type == PointerEventType.Exit) { tooltipState.dismiss() }
-                }
-            }
-        }) { content() }
+        content()
     }
 }
 
@@ -329,13 +317,24 @@ fun SudokuCellView(
             .background(
                 when {
                     isAnimating -> animColor
-                    isSelected -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.5f)
+                    isSelected -> Color(0xFF81D4FA).copy(alpha = 0.6f)
                     isHinted -> MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.6f)
-                    isHighlighted -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f)
+                    isHighlighted -> Color(0xFFB3E5FC).copy(alpha = 0.8f)
                     else -> Color.Transparent
                 }
             )
-            .border(0.5.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.4f))
+            .border(
+                when {
+                    isSelected -> 2.dp
+                    isHighlighted -> 1.5.dp
+                    else -> 0.5.dp
+                },
+                when {
+                    isSelected -> Color(0xFF0288D1) // Darker blue for border
+                    isHighlighted -> Color(0xFF03A9F4) // Medium blue for highlight border
+                    else -> MaterialTheme.colorScheme.outline.copy(alpha = 0.4f)
+                }
+            )
             .clickable { onClick() },
         contentAlignment = Alignment.Center
     ) {
